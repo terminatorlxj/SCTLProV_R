@@ -66,6 +66,8 @@ try
 			ia_to_bin ia modl
 		end
 with _ -> print_endline "exception encountered in ia_to_bin."; exit (-1)
+(*****)
+
 
 
 type continuation = 
@@ -80,16 +82,16 @@ exception Unable_to_prove
 (*whether state s is already in an existing merge*)
 let merges = Hashtbl.create 10
 let pre_process_merges sub_fml_tbl = 
-	Hashtbl.iter (fun a b -> Hashtbl.add merges a (!(Bdd.leaf_false))) sub_fml_tbl;
-	Hashtbl.iter (fun a b -> Hashtbl.add true_merge a (!(Bdd.leaf_false))) sub_fml_tbl;
-	Hashtbl.iter (fun a b -> Hashtbl.add false_merge a (!(Bdd.leaf_false))) sub_fml_tbl
-let post_process_merges () = 
-	Hashtbl.iter (fun a b -> print_endline (a ^ ": " ^ (string_of_int (State_set.cardinal b)))) merges
+	Hashtbl.iter (fun a b -> Hashtbl.add merges a (!(Bdd.leaf_false))) sub_fml_tbl
+(* let post_process_merges () = 
+	Hashtbl.iter (fun a b -> print_endline (a ^ ": " ^ (string_of_int (State_set.cardinal b)))) merges *)
 
 let state_in_merge merg fml st modl = 
 	let bs = ia_to_bin st modl in
-	let sts = Hashtbl.find merg fml in Bdd.int_array_satisfy bs sts
-let add_merge merg fml ss = 
+	let sts = Hashtbl.find merg fml in 
+	Bdd.int_array_satisfy bs sts
+
+let add_merge merg fml ss modl = 
 	let sts = Hashtbl.find merg fml in
 	Hashtbl.replace merg fml (State_set.fold (fun elem b -> let bs = ia_to_bin elem modl in Bdd.add_int_array bs b) ss sts)
 
@@ -111,7 +113,13 @@ let rec make_ar_cont gamma s s' fml1 fml2 levl sl contl contr =
 let rec make_eu_cont gamma s s' fml1 fml2 levl sl contl contr =
 	State_set.fold (fun a c -> Cont (gamma, EU (s, s', fml1, fml2, (State a)), levl, contl, c)) sl contr
 	
-	
+let prove_atomic s sl modl = 
+	match s with
+	| "has_next" -> State_set.is_empty (next (get_array_from_state (List.hd sl)) modl.transitions modl.var_index_tbl)
+	| _ -> (try (match apply_atomic (Hashtbl.find modl.atomic_tbl s) sl modl.var_index_tbl with
+			| Top -> true
+			| Bottom -> false
+			| _ -> raise Error_proving_atomic) with Not_found -> print_endline ("Did not find atomic formula: "^s); exit 1) 
 
 let rec prove_resursive gamma fml levl modl = 
 	match fml with
@@ -212,7 +220,9 @@ let rec prove_resursive gamma fml levl modl =
 
 
 let rec prove_model modl = 
-	let spec_lst = modl.model_spec_list in 
+	get_bin_attr modl;
+	Bdd.init !ia_bin_size;
+	let spec_lst = modl.spec_list in 
 	let rec prove_lst lst = 
 	match lst with
 	| [] -> ()
@@ -220,7 +230,7 @@ let rec prove_model modl =
 							print_endline (fml_to_string (nnf_fml));
 							pre_process_merges (select_sub_fmls (sub_fmls nnf_fml "1"));
 							(* let b = (prove (Cont (State_set.empty, Formula.subst_s (nnf_fml) (SVar "ini") modl.model_init_state, "1", Basic true, Basic false)) modl) in *)
-							let b = (prove_resursive State_set.empty (Formula.subst_s (nnf_fml) (SVar "ini") modl.init_assign) "1" modl) in
+							let b = (prove_resursive State_set.empty (Formula.subst_s (nnf_fml) (SVar "ini") (State modl.init_assign)) "1" modl) in
 							 print_endline (s ^ ": " ^ (string_of_bool b)));
 							 prove_lst lst') in prove_lst spec_lst
 
